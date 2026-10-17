@@ -29,8 +29,19 @@ export default function LoginPage() {
     // Date.now() calls don't run while Next.js prerenders this page.
     const supabase = createClient()
 
+    const params = new URLSearchParams(window.location.search)
+    const nextParam = params.get('next')
+    const targetPath =
+      nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/hub'
+
     if (isSignUp) {
-      const { error } = await supabase.auth.signUp({ email, password })
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(targetPath)}`,
+        },
+      })
       if (error) setErrorMsg(error.message)
       else setErrorMsg('Check your email for the confirmation link.')
     } else {
@@ -40,7 +51,7 @@ export default function LoginPage() {
       } else {
         // Set 6-hour session start timestamp cookie (21600 seconds)
         document.cookie = `dnd_session_start=${Date.now()}; path=/; max-age=21600; SameSite=Lax`
-        router.push('/hub')
+        router.push(targetPath)
         router.refresh()
       }
     }

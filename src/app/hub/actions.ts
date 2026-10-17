@@ -81,36 +81,76 @@ export async function launchTable(campaignId: string) {
   redirect(`/table/${table.id}`)
 }
 
-export async function joinTableByCode(code: string): Promise<{ success: boolean; tableId?: string; error?: string }> {
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function extractTableIdentifier(rawInput: string): string {
+  const trimmed = rawInput.trim()
+  if (!trimmed) return ''
+
+  const tablePathMatch = trimmed.match(/\/table\/([^/?#\s]+)/i)
+  if (tablePathMatch?.[1]) {
+    return decodeURIComponent(tablePathMatch[1]).trim()
+  }
+
+  try {
+    if (trimmed.includes('://') || trimmed.startsWith('?')) {
+      const url = new URL(trimmed.startsWith('?') ? `http://localhost/${trimmed}` : trimmed)
+      const paramCode = url.searchParams.get('code') || url.searchParams.get('invite')
+      if (paramCode) return paramCode.trim()
+    }
+  } catch {
+    // Fall back to raw input
+  }
+
+  return trimmed
+}
+
+export async function joinTableByCode(
+  codeOrLink: string
+): Promise<{ success: boolean; tableId?: string; tableCode?: string; error?: string }> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
   if (!user) return { success: false, error: 'กรุณาเข้าสู่ระบบก่อนเข้าร่วมโต๊ะ' }
 
-  const cleanCode = code.trim().toUpperCase()
-  if (!cleanCode) return { success: false, error: 'กรุณากรอก Table Code' }
+  const identifier = extractTableIdentifier(codeOrLink)
+  if (!identifier) return { success: false, error: 'กรุณากรอก Table Code หรือ Invite Link' }
 
-  const { data: table, error } = await supabase
-    .from('tables')
-    .select('id')
-    .eq('table_code', cleanCode)
-    .maybeSingle()
+  const isUuid = UUID_REGEX.test(identifier)
+  const query = supabase.from('tables').select('id, table_code')
+  const { data: table, error } = await (isUuid
+    ? query.eq('id', identifier)
+    : query.eq('table_code', identifier.toUpperCase())
+  ).maybeSingle()
 
   if (error || !table) {
-    return { success: false, error: 'ไม่พบโต๊ะดังกล่าว กรุณาตรวจสอบ Table Code อีกครั้ง' }
+    return { success: false, error: 'ไม่พบโต๊ะดังกล่าว กรุณาตรวจสอบ Table Code หรือ Invite Link อีกครั้ง' }
   }
 
-  // Insert member if not already joined
-  const { error: memberError } = await supabase.from('table_members').upsert({
-    table_id: table.id,
-    user_id: user.id,
-  }, { onConflict: 'table_id,user_id' })
+  // Insert member if not already joined (preserves existing character/ready state on re-entry)
+  const { data: existingSeat } = await supabase
+    .from('table_members')
+    .select('id')
+    .eq('table_id', table.id)
+    .eq('user_id', user.id)
+    .maybeSingle()
 
-  if (memberError) {
-    return { success: false, error: `ไม่สามารถเข้าร่วมโต๊ะได้: ${memberError.message}` }
+  if (!existingSeat) {
+    const { error: memberError } = await supabase.from('table_members').upsert(
+      {
+        table_id: table.id,
+        user_id: user.id,
+      },
+      { onConflict: 'table_id,user_id' }
+    )
+
+    if (memberError) {
+      return { success: false, error: `ไม่สามารถเข้าร่วมโต๊ะได้: ${memberError.message}` }
+    }
   }
 
-  return { success: true, tableId: table.id }
+  revalidatePath('/hub')
+  return { success: true, tableId: table.id, tableCode: table.table_code }
 }
 
 // Allows any participant to leave a table they joined

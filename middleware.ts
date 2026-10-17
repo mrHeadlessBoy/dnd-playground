@@ -79,8 +79,13 @@ export async function middleware(request: NextRequest) {
     if (isExpired) {
       await supabase.auth.signOut()
       const url = request.nextUrl.clone()
+      const nextPath = `${request.nextUrl.pathname}${request.nextUrl.search}`
       url.pathname = '/login'
+      url.search = ''
       url.searchParams.set('reason', 'session-expired')
+      if (isProtected && nextPath !== '/hub') {
+        url.searchParams.set('next', nextPath)
+      }
 
       const redirectResponse = NextResponse.redirect(url)
       redirectResponse.cookies.set(SESSION_START_COOKIE, '', { path: '/', maxAge: 0 })
@@ -98,8 +103,13 @@ export async function middleware(request: NextRequest) {
 
   if (!user && isProtected) {
     const url = request.nextUrl.clone()
+    const nextPath = `${request.nextUrl.pathname}${request.nextUrl.search}`
     url.pathname = '/login'
-    
+    url.search = ''
+    if (nextPath && nextPath !== '/hub') {
+      url.searchParams.set('next', nextPath)
+    }
+
     // Create redirect response while transferring any refreshed cookies
     const redirectResponse = NextResponse.redirect(url)
     supabaseResponse.cookies.getAll().forEach((cookie) => {
@@ -108,11 +118,12 @@ export async function middleware(request: NextRequest) {
     return redirectResponse
   }
 
-  // If user is already logged in and visits /login, send them to /hub
+  // If user is already logged in and visits /login, send them to next or /hub
   if (user && request.nextUrl.pathname === '/login') {
-    const url = request.nextUrl.clone()
-    url.pathname = '/hub'
-    return NextResponse.redirect(url)
+    const nextParam = request.nextUrl.searchParams.get('next')
+    const targetPath =
+      nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/hub'
+    return NextResponse.redirect(new URL(targetPath, request.url))
   }
 
   return supabaseResponse

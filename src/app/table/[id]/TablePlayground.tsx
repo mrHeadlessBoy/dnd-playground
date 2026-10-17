@@ -334,7 +334,15 @@ export default function TablePlayground({
         fetchTable()
         fetchTurns()
       })
-      .subscribe()
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          void channel.send({
+            type: 'broadcast',
+            event: 'table_sync',
+            payload: { userId, timestamp: Date.now() },
+          })
+        }
+      })
 
     channelRef.current = channel
 

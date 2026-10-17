@@ -1,7 +1,8 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Edit3, Heart, Plus, RotateCcw, Save, Trash2, Zap } from 'lucide-react'
+import { ArrowLeft, Check, Edit3, Heart, Link2, Plus, RotateCcw, Save, Trash2, Zap } from 'lucide-react'
 import {
   ABILITY_SCORE_KEYS,
   CHARACTER_CONDITIONS,
@@ -47,8 +48,20 @@ export default function CharacterInspectorPanel({
   onSaveCharEdits,
   onCancelEdit,
 }: CharacterInspectorPanelProps) {
+  const [copiedInvite, setCopiedInvite] = useState(false)
   const activeSkills = extractCharacterSkills(activeChar)
   const { currentSkillCost, maxSkillCost } = extractCharacterSkillCost(activeChar)
+
+  const handleCopyInviteLink = async () => {
+    const inviteUrl = `${window.location.origin}/table/${tableCode}`
+    try {
+      await navigator.clipboard.writeText(inviteUrl)
+      setCopiedInvite(true)
+      setTimeout(() => setCopiedInvite(false), 2000)
+    } catch {
+      // Fallback ignored
+    }
+  }
 
   return (
     <aside className="w-80 border-r border-zinc-800 bg-zinc-900/40 p-5 flex flex-col justify-between overflow-y-auto">
@@ -551,9 +564,28 @@ export default function CharacterInspectorPanel({
         )}
       </div>
 
-      <div className="text-[10px] font-mono text-zinc-600 border-t border-zinc-800 pt-3 flex justify-between">
-        <span>CODE: {tableCode}</span>
-        <span>{isHeadTable ? 'HEAD TABLE' : 'PLAYER'}</span>
+      <div className="border-t border-zinc-800 pt-3 space-y-2">
+        <button
+          type="button"
+          onClick={handleCopyInviteLink}
+          className="w-full py-1.5 px-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 hover:border-amber-500/50 text-xs font-medium text-zinc-300 hover:text-amber-400 transition flex items-center justify-center gap-1.5 cursor-pointer"
+        >
+          {copiedInvite ? (
+            <>
+              <Check className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-emerald-400">Invite Link Copied!</span>
+            </>
+          ) : (
+            <>
+              <Link2 className="w-3.5 h-3.5 text-amber-500" />
+              <span>Copy Invite Link</span>
+            </>
+          )}
+        </button>
+        <div className="text-[10px] font-mono text-zinc-500 flex justify-between items-center">
+          <span>CODE: {tableCode}</span>
+          <span>{isHeadTable ? 'HEAD TABLE' : 'PLAYER'}</span>
+        </div>
       </div>
     </aside>
   )

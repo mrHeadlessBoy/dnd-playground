@@ -4,7 +4,7 @@ import { useState, useMemo, useRef, useEffect, type FormEvent } from 'react'
 import { useFormStatus } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { launchTable, joinTableByCode, deleteTable, deleteCampaign, leaveTable } from './actions'
-import { Play, LogIn, Compass, Trash2, Loader2, LogOut, Dices, Info, Pencil, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Play, LogIn, Compass, Trash2, Loader2, LogOut, Dices, Info, Pencil, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Link2, Check } from 'lucide-react'
 import Link from 'next/link'
 
 import { playSystemSound } from '@/lib/sound'
@@ -69,12 +69,45 @@ function ActiveTableCard({
   onDelete: (tbl: ActiveTable) => void
   onLeave: (tbl: ActiveTable) => void
 }) {
+  const [copiedLink, setCopiedLink] = useState(false)
+
+  const handleCopyInviteLink = async () => {
+    const inviteUrl = `${window.location.origin}/table/${tbl.table_code}`
+    try {
+      await navigator.clipboard.writeText(inviteUrl)
+      setCopiedLink(true)
+      setTimeout(() => setCopiedLink(false), 2000)
+    } catch {
+      // Fallback if clipboard API fails
+    }
+  }
+
   return (
     <div className="bg-zinc-900/40 border border-zinc-800 rounded-xl p-5 flex flex-col justify-between">
       <div>
-        <span className="text-[10px] uppercase font-mono tracking-widest text-amber-500">
-          CODE: {tbl.table_code}
-        </span>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] uppercase font-mono tracking-widest text-amber-500">
+            CODE: {tbl.table_code}
+          </span>
+          <button
+            type="button"
+            onClick={handleCopyInviteLink}
+            title="Copy direct invite link to Table Playground"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700/80 text-[10px] font-mono text-zinc-300 hover:text-amber-400 transition cursor-pointer"
+          >
+            {copiedLink ? (
+              <>
+                <Check className="w-3 h-3 text-emerald-400" />
+                <span className="text-emerald-400">Copied!</span>
+              </>
+            ) : (
+              <>
+                <Link2 className="w-3 h-3" />
+                <span>Invite Link</span>
+              </>
+            )}
+          </button>
+        </div>
         <h3 className="text-base font-semibold text-white mt-1">{tbl.campaigns?.title}</h3>
         <p className="text-xs text-zinc-400 mt-1">
           Turn: {tbl.current_turn} | Phase: {tbl.turn_phase}
@@ -283,24 +316,28 @@ export default function HubClient({ publicCampaigns, activeTables, currentUserId
 
   const handleJoin = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    const cleanCode = tableCode.trim().toUpperCase()
-    if (!cleanCode) return
+    const rawInput = tableCode.trim()
+    if (!rawInput) return
+
+    const displayBadge =
+      rawInput.match(/\/table\/([^/?#\s]+)/i)?.[1]?.toUpperCase() ||
+      (rawInput.length <= 12 ? rawInput.toUpperCase() : 'INVITE LINK')
 
     setJoining(true)
     setJoinModal({
       open: true,
       status: 'loading',
-      code: cleanCode,
+      code: displayBadge,
       message: 'กำลังตรวจสอบรหัสโต๊ะและจัดเตรียมที่นั่งสำหรับคุณ...',
     })
 
     try {
-      const res = await joinTableByCode(cleanCode)
+      const res = await joinTableByCode(rawInput)
       if (res.success && res.tableId) {
         setJoinModal({
           open: true,
           status: 'success',
-          code: cleanCode,
+          code: res.tableCode || displayBadge,
           message: 'เข้าร่วมโต๊ะสำเร็จ! กำลังพาท่านเดินทางเข้าสู่ห้องเล่น...',
         })
         const targetTableId = res.tableId
@@ -316,8 +353,8 @@ export default function HubClient({ publicCampaigns, activeTables, currentUserId
         setJoinModal({
           open: true,
           status: 'error',
-          code: cleanCode,
-          message: res.error || 'ไม่พบโต๊ะดังกล่าว กรุณาตรวจสอบ Table Code อีกครั้ง',
+          code: displayBadge,
+          message: res.error || 'ไม่พบโต๊ะดังกล่าว กรุณาตรวจสอบ Table Code หรือ Invite Link อีกครั้ง',
         })
       }
     } catch (err: unknown) {
@@ -325,7 +362,7 @@ export default function HubClient({ publicCampaigns, activeTables, currentUserId
       setJoinModal({
         open: true,
         status: 'error',
-        code: cleanCode,
+        code: displayBadge,
         message: err instanceof Error ? err.message : 'เกิดข้อผิดพลาดในการเชื่อมต่อเข้าโต๊ะ',
       })
     } finally {
@@ -338,22 +375,26 @@ export default function HubClient({ publicCampaigns, activeTables, currentUserId
       {/* Quick Join Bar */}
       <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div>
-          <h2 className="text-base font-semibold text-white">Have a Table Code?</h2>
-          <p className="text-xs text-zinc-400">Enter the 6-character code provided by your Head Table.</p>
+          <h2 className="text-base font-semibold text-white">Have a Table Code or Invite Link?</h2>
+          <p className="text-xs text-zinc-400">
+            Enter the 6-character code or paste an invite link from your Head Table to join or re-enter.
+          </p>
         </div>
         <form onSubmit={handleJoin} className="flex gap-2 w-full sm:w-auto">
           <input
             type="text"
-            maxLength={8}
-            placeholder="e.g. 7K4X9B"
+            placeholder="Code (e.g. 7K4X9B) or Invite Link"
             value={tableCode}
-            onChange={(e) => setTableCode(e.target.value.toUpperCase())}
-            className="bg-zinc-950 border border-zinc-700 px-3 py-2 rounded-lg text-sm tracking-wider uppercase font-mono text-white focus:border-amber-500 outline-none"
+            onChange={(e) => {
+              const val = e.target.value
+              setTableCode(val.includes('/') || val.includes(':') ? val : val.toUpperCase())
+            }}
+            className="bg-zinc-950 border border-zinc-700 px-3 py-2 rounded-lg text-sm font-mono text-white focus:border-amber-500 outline-none w-full sm:w-64"
           />
           <button
             type="submit"
             disabled={joining}
-            className="bg-amber-600 hover:bg-amber-500 px-4 py-2 rounded-lg text-sm font-medium text-white flex items-center gap-1.5 cursor-pointer"
+            className="bg-amber-600 hover:bg-amber-500 px-4 py-2 rounded-lg text-sm font-medium text-white flex items-center gap-1.5 cursor-pointer shrink-0"
           >
             <LogIn className="w-4 h-4" /> Join
           </button>
